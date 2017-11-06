@@ -60,11 +60,11 @@ class NetEaseAPI:
     @staticmethod
     def getMusicURL(id):
 
-        Song_Info = {"ids": "[{}}]".format(id),
+        Song_Info = {"ids": "[{}]".format(id),
                     "br": "999000",
                     "csrf_token": ''}
 
-        returnText = requests.post("http://music.163.com/weapi/song/enhance/player/url?csrf_token=",data = encrypted_request(Song_Info),header = header)
+        returnText = requests.post("http://music.163.com/weapi/song/enhance/player/url?csrf_token=",data = encrypted_request(Song_Info),headers = header)
         return json.loads(returnText.content)['data'][0]['url']
     
     @staticmethod
@@ -88,43 +88,37 @@ class NetEaseAPI:
             songList.append((song['name'],song['id']))
 
         
-        print(songList)
+        return songList
 
 
 class downloader(threading.Thread):
     
-    def init(songList = []):
+    def init(self,songList = []):
 
         self.songList = songList
 
-    def run():
+    def run(self):
 
         for song in self.songList:
 
+            print('Now Downloading {} ...'.format(song[0]))
             mp3file = requests.get(NetEaseAPI.getMusicURL(song[1]))
 
-            with open('{}'.format(song[0]),'wb') as f:
+            with open('Music\\{}.mp3'.format(song[0]),'wb') as f:
 
                 f.write(mp3file.content)
 
 def main():
 
-    '''Song_Info = {"ids": "[31861287]",
-                    "br": "999000",
-                    "csrf_token": ''}
-    
-    foo = requests.post('http://music.163.com/weapi/song/enhance/player/url?csrf_token=',data=encrypted_request(Song_Info),headers = header)
-
-    print(json.loads(foo.content)['data'][0]['url'])'''
     name = '周杰伦'
     counter = 0
     temp = []
-    for i in NetEaseAPI.search(s = name,stype = 1):
+    for i in NetEaseAPI.search(name,stype = 1):
 
         temp.append(i)
         counter+=1
 
-        if(counter == 100):
+        if(counter == 10):
             
             tempd = downloader()
             tempd.init(temp)
