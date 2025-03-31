@@ -2,130 +2,73 @@
     Using Multi-Thread. '''
 __author__ = 'GhostAnderson'
 
-import bs4
-import os
 import requests
-import base64
-import binascii
-from Crypto.Cipher import AES
-import json
-import threading
 import queue
 
-header = {
-    'Accept':'*/*',
-    'Accept-Encoding':'gzip, deflate, br',
-    'Accept-Language':'en,zh;q=0.8,zh-CN;q=0.6,en-US;q=0.4',
-    'Connection':'keep-alive',
-    'Content-Type':'application/x-www-form-urlencoded',
-    'Origin':'https://music.163.com',
-    'Referer':'https://music.163.com/song',
-    'User-Agent':'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/61.0.3163.100 Safari/537.36'
-}
+user_track_info_template = 'http://localhost:3000/user/playlist?uid={}'
+user_follow_template = 'http://localhost:3000/user/follows?uid={}'
+track_info_template = 'http://localhost:3000/playlist/track/all?id={}&limit={}&offset=1'
+
+import collections
+track_song_map = collections.defaultdict(list)
+
+visited_user = set()
+visited_track = set()
+user_queue = queue.Queue()
+
+start_point = 45240497
+user_queue.put(start_point)
+
+start_point = 114651616
+user_queue.put(start_point)
 
 
-modulus = '00e0b509f6259df8642dbc35662901477df22677ec152b5ff68ace615bb7b725152b3ab17a876aea8a5aa76d2e417629ec4ee341f56135fccf695280104e0312ecbda92557c93870114af6c9d05c4f7f0c3685b7a46bee255932575cce10b424d813cfe4875d3e82047b97ddef52741d546b8e289dc6935b3ece0462db0a22b8e7'
-nonce = '0CoJUm6Qyw8W8jud'
-pubKey = '010001'
+import time
 
-def createSecretKey(size):  
-    return binascii.hexlify(os.urandom(size))[:16]  
+import json
+try:
+    while not user_queue.empty():
+        print(f'Now queue size: {user_queue.qsize()}, {len(track_song_map)}/50000 tracks has gathered')
+        if len(track_song_map) >= 50000:
+            break
 
-def aesEncrypt(text, secKey):  
-    pad = 16 - len(text) % 16  
-    text = text + chr(pad) * pad  
-    encryptor = AES.new(secKey, 2, '0102030405060708')  
-    ciphertext = encryptor.encrypt(text)  
-    ciphertext = base64.b64encode(ciphertext).decode('utf-8')  
-    return ciphertext  
-
-def rsaEncrypt(text, pubKey, modulus):  
-    text = text[::-1]  
-    rs = pow(int(binascii.hexlify(text), 16), int(pubKey, 16), int(modulus, 16))  
-    return format(rs, 'x').zfill(256)  
-
-def encrypted_request(text):
-    text = json.dumps(text)
-    secKey = createSecretKey(16)
-    encText = aesEncrypt(aesEncrypt(text, nonce), secKey)
-    encSecKey = rsaEncrypt(secKey, pubKey, modulus)
-    data = {
-        'params': encText,
-        'encSecKey': encSecKey
-    }
-    return data
-
-class NetEaseAPI:
-
-    @staticmethod
-    def getMusicURL(id):
-
-        Song_Info = {"ids": "[{}]".format(id),
-                    "br": "999000",
-                    "csrf_token": ''}
-
-        returnText = requests.post("http://music.163.com/weapi/song/enhance/player/url?csrf_token=",data = encrypted_request(Song_Info),headers = header)
-        return json.loads(returnText.content)['data'][0]['url']
-    
-    @staticmethod
-    def search(s, stype=1, offset=0, total='true', limit=100):  
-    #搜索单曲(1)，歌手(100)，专辑(10)，歌单(1000)，用户(1002) *(type)*
-        
-        action = 'http://music.163.com/api/search/get/web'
-        data = {  
-            's': s,  
-            'type': stype,  
-            'offset': offset,  
-            'total': total,  
-            'limit': limit  
-        }
-        searchResult = requests.post(action,data = data,headers = header).text
-        searchResult = json.loads(searchResult)['result']['songs']
-        songList = []
-
-        for song in searchResult:
-
-            songList.append((song['name'],song['id']))
-
-        
-        return songList
-
-
-class downloader(threading.Thread):
-    
-    def init(self,songList = []):
-
-        self.songList = songList
-
-    def run(self):
-
-        for song in self.songList:
-
-            print('Now Downloading {} ...'.format(song[0]))
-            mp3file = requests.get(NetEaseAPI.getMusicURL(song[1]))
-
-            with open('Music\\{}.mp3'.format(song[0]),'wb') as f:
-
-                f.write(mp3file.content)
-
-def main():
-
-    name = '周杰伦'
-    counter = 0
-    temp = []
-    for i in NetEaseAPI.search(name,stype = 1):
-
-        temp.append(i)
-        counter+=1
-
-        if(counter == 10):
+        user = user_queue.get()
+        if user in visited_user: continue
+        user_tracks_link = user_track_info_template.format(user)
+        result = json.loads(requests.get(user_tracks_link).text)
+        if result['code'] == 200:
+            filtered_sound_list = filter(lambda x: x[1] >= 10 ,map(lambda x: (x['id'], x['trackCount']), result['playlist']))
+            visited_user.add(user)
+            for sound_track_id, length in filtered_sound_list:
+                if sound_track_id in visited_track: continue
+                track_info_link = track_info_template.format(sound_track_id, 1000)
+                result = json.loads(requests.get(track_info_link).text)
+                if result['code'] == 200:
+                    songs = list(map(lambda x: (x['name'], x['id'], x['ar'][0]['name']), result['songs']))
+                    track_song_map[sound_track_id] = songs
+                    visited_track.add(sound_track_id)
             
-            tempd = downloader()
-            tempd.init(temp)
-            tempd.start()
-            temp = []
-            counter = 0
+            user_follow_link = user_follow_template.format(user)
+            result = json.loads(requests.get(user_follow_link).text)
+            if result['code'] == 200:
+                user_ids = list(map(lambda x: x['userId'], result['follow']))
+                list(map(user_queue.put, user_ids))
+        else:
+            break
 
+        time.sleep(5)
+except:
+    pass
+finally:
+    import pickle
+    pickle.dump(track_song_map, open('track_song_map.pkl', 'wb'))
+    pickle.dump(visited_user, open('visited_user.pkl', 'wb'))
+    pickle.dump(visited_track, open('visited_track.pkl', 'wb'))
+    pickle.dump(list(user_queue.queue), open('user_queue.pkl', 'wb'))
 
-if __name__ == '__main__':
-    main()
+# with open('visited_user.txt', 'w') as visitied_user_file, open('visited_track.txt', 'w') as visited_track_file, open('track_song_map.txt', 'w') as track_song_map_file:
+#     list(map(lambda x:visitied_user_file.write(f'{x}\n'), visited_user))
+#     list(map(lambda x:visited_track_file.write(f'{x}\n'), visited_track))
+
+#     for sound_track, songs in track_song_map.items():
+#         track_song_map_file.write('{}\t{}\n'.format(sound_track, ','.join(map(str, songs))))
