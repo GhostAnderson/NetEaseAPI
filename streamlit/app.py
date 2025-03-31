@@ -28,6 +28,7 @@ user_input = st.text_input("👇 输入你的网易云音乐uid")
 
 import time
 
+@st.cache_data
 def recommend(user_input):
     with open('saved.user.id.txt', 'a') as f:
         f.write(f'{user_input}\n')
@@ -47,17 +48,16 @@ def recommend(user_input):
             songs = list(map(lambda x: x['id'], result['songs']))
         print(list(map(lambda x: song2info[x], list(reversed(songs))[-100:])))
     
-    random.seed(time.time())
     result = recommender.recommend(list(reversed(songs))[-100:], top_k=100)
-    random.shuffle(result)
-    return result[:20]
+    return result
 
 if st.button("🚀 推荐一下！"):
     session = [x.strip() for x in user_input.split(",") if x.strip()]
     if not session:
         st.warning("输入不能为空或格式错误！")
     else:
-        topk = recommend(user_input)
+        top100 = recommend(user_input)
+        random.shuffle(top100)
         st.markdown("🎯 **推荐结果 Top 10：**")
-        for idx, item in enumerate(topk, 1):
+        for idx, item in enumerate(top100[:20], 1):
             st.markdown(f"{idx}. [**{song2info[int(item)][0]}** {song2info[int(item)][1]}]({song_info_template.format(item)})")
